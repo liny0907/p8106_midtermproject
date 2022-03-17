@@ -1,1 +1,1 @@
-# p8106_midtermproject
+This is the repository for P8106 midterm project studying a stroke prediction dataset.

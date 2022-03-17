@@ -1,0 +1,15 @@
+---
+title: "P8106 Midterm Project" 
+author: "Lin Yang"
+output: github_document
+--- 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+
+
+
+
+
