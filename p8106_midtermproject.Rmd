@@ -8,7 +8,82 @@ output: github_document
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 ```
 
+```{r}
+library(tidyverse)
+library(caret)
+library(pROC)
+library(AppliedPredictiveModeling)
+```
 
+
+## Partition the dataset into training data and test data
+```{r}
+stroke_dat <- read.csv("healthcare-dataset-stroke-data.csv") %>% 
+  janitor::clean_names() %>% 
+  select(-1) %>% #delete the id column
+  filter(bmi != 'N/A') %>% 
+  mutate(bmi = as.numeric(bmi), #remove missing bmi values
+         stroke = as.factor(stroke))
+
+set.seed(2022)
+trainRows <- createDataPartition(y = stroke_dat$stroke, p = 0.8, list = FALSE)
+stroke_train <- stroke_dat[trainRows, ]
+stroke_test <- stroke_dat[-trainRows, ]
+
+x_train <- model.matrix(stroke ~ ., stroke_train)[ , -1]
+y_train <- stroke_train$stroke
+
+x_test <- model.matrix(stroke ~ ., stroke_test)[ , -1]
+y_test <- stroke_test$stroke
+```
+
+## EDA
+```{r, dpi = 300}
+summary(stroke_dat)
+
+stroke_dat_con <- stroke_dat %>% select(age, avg_glucose_level, bmi)
+theme1 <- transparentTheme(trans = .4)
+trellis.par.set(theme1)
+
+featurePlot(x = stroke_dat_con, 
+            y = stroke_dat$stroke,
+            scales = list(x = list(relation = "free"), 
+                          y = list(relation = "free")),
+            plot = "density", pch = "|", 
+            auto.key = list(columns = 2))
+
+#correlation plot of predictors
+corrplot::corrplot(cor(x_train), 
+         method = "circle", 
+         type = "full",
+         tl.cex = 0.5)
+```
+
+From the correlation plot, we can see that there are no highly correlated predictors in general. `ever_marriedYes` is positively correlated with `age`, which is reasonable. 
+
+## Fitting models
+```{r, dpi = 300}
+#glm
+fit.glm <- glm(stroke ~ .,
+               data = stroke_dat,
+               subset = trainRows,
+               family = binomial(link = "logit"))
+
+test.pred.prob <- predict(fit.glm,
+                     newdata = stroke_test,
+                     type = "response")
+test.pred <- rep("0", length(test.pred.prob))
+test.pred[test.pred.prob > 0.5] <- "1"
+
+confusionMatrix(data = as.factor(test.pred),
+                reference = stroke_test$stroke,
+                positive = "1")
+
+#ROC curve
+roc.glm <- roc(stroke_test$stroke, test.pred.prob)
+plot(roc.glm, legacy.axes = TRUE, print.auc = TRUE)
+plot(smooth(roc.glm), col = 4, add = TRUE)
+```
 
 
 
