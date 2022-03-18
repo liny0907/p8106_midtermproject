@@ -11,29 +11,62 @@ knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 ```{r}
 library(tidyverse)
 library(caret)
+library(glmnet)
+library(mlbench)
 library(pROC)
+library(klaR)
+library(vip)
 library(AppliedPredictiveModeling)
 ```
 
 
-## Partition the dataset into training data and test data
+## Data cleaning
 ```{r}
 stroke_dat <- read.csv("healthcare-dataset-stroke-data.csv") %>% 
   janitor::clean_names() %>% 
-  select(-1) %>% #delete the id column
-  filter(bmi != 'N/A') %>% 
-  mutate(bmi = as.numeric(bmi), #remove missing bmi values
-         stroke = as.factor(stroke))
+  dplyr::select(-1) %>% #delete the id column
+  filter(bmi != "N/A") %>% #remove missing bmi values
+  filter(gender != "Other") %>% 
+  mutate(bmi = as.numeric(bmi),
+         gender = factor(gender,
+                         levels = c("Female", "Male"),
+                         labels = c("0", "1")),
+         ever_married = factor(ever_married,
+                               levels = c("No", "Yes"),
+                               labels = c("0", "1")),
+         work_type = factor(work_type,
+                            levels = c("children", "Govt_job", "Never_worked", "Private", "Self-employed"),
+                            labels = c("0", "1", "2", "3", "4")),
+         residence_type = factor(residence_type,
+                                 levels = c("Rural", "Urban"),
+                                 labels = c("0", "1")),
+         smoking_status = factor(smoking_status,
+                                 levels = c("formerly smoked", "never smoked", "smokes", "Unknown"),
+                                 labels = c("0", "1", "2", "3")),
+         stroke = factor(stroke,
+                         levels = c("0", "1"),
+                         labels = c("neg", "pos")))
+
+#change all factor variables to numeric ones
+stroke_dat <- stroke_dat %>% 
+  mutate(gender = as.numeric(gender),
+         hypertension = as.numeric(hypertension),
+         heart_disease = as.numeric(heart_disease),
+         ever_married = as.numeric(ever_married),
+         work_type = as.numeric(work_type),
+         residence_type = as.numeric(residence_type),
+         smoking_status = as.numeric(smoking_status))
+
 
 set.seed(2022)
 trainRows <- createDataPartition(y = stroke_dat$stroke, p = 0.8, list = FALSE)
 stroke_train <- stroke_dat[trainRows, ]
 stroke_test <- stroke_dat[-trainRows, ]
 
-x_train <- model.matrix(stroke ~ ., stroke_train)[ , -1]
+x_train <- stroke_train[ , -11]
 y_train <- stroke_train$stroke
 
-x_test <- model.matrix(stroke ~ ., stroke_test)[ , -1]
+x_test <- stroke_test[ , -11]
 y_test <- stroke_test$stroke
 ```
 
@@ -41,7 +74,7 @@ y_test <- stroke_test$stroke
 ```{r, dpi = 300}
 summary(stroke_dat)
 
-stroke_dat_con <- stroke_dat %>% select(age, avg_glucose_level, bmi)
+stroke_dat_con <- stroke_dat %>% dplyr::select(age, avg_glucose_level, bmi)
 theme1 <- transparentTheme(trans = .4)
 trellis.par.set(theme1)
 
@@ -51,6 +84,10 @@ featurePlot(x = stroke_dat_con,
                           y = list(relation = "free")),
             plot = "density", pch = "|", 
             auto.key = list(columns = 2))
+
+#LDA based on every combination of two variables
+partimat(stroke ~ age + avg_glucose_level + bmi, 
+         data = stroke_dat, method = "lda")
 
 #correlation plot of predictors
 corrplot::corrplot(cor(x_train), 
@@ -62,22 +99,23 @@ corrplot::corrplot(cor(x_train),
 From the correlation plot, we can see that there are no highly correlated predictors in general. `ever_marriedYes` is positively correlated with `age`, which is reasonable. 
 
 ## Fitting models
+
+### Logistic regression 
 ```{r, dpi = 300}
 #glm
 fit.glm <- glm(stroke ~ .,
-               data = stroke_dat,
-               subset = trainRows,
+               data = stroke_train,
                family = binomial(link = "logit"))
 
 test.pred.prob <- predict(fit.glm,
                      newdata = stroke_test,
                      type = "response")
-test.pred <- rep("0", length(test.pred.prob))
-test.pred[test.pred.prob > 0.5] <- "1"
+test.pred <- rep("neg", length(test.pred.prob))
+test.pred[test.pred.prob > 0.5] <- "pos"
 
 confusionMatrix(data = as.factor(test.pred),
                 reference = stroke_test$stroke,
-                positive = "1")
+                positive = "pos")
 
 #ROC curve
 roc.glm <- roc(stroke_test$stroke, test.pred.prob)
@@ -85,6 +123,95 @@ plot(roc.glm, legacy.axes = TRUE, print.auc = TRUE)
 plot(smooth(roc.glm), col = 4, add = TRUE)
 ```
 
+```{r}
+#fit a logistic regression model using caret for CV
+ctrl <- trainControl(method = "repeatedcv", repeats = 5,
+                     summaryFunction = twoClassSummary,
+                     classProbs = TRUE)
+set.seed(2022)
+model.glm <- train(x = stroke_train[ , 1:10],
+                   y = stroke_train$stroke,
+                   method = "glm",
+                   metric = "ROC",
+                   trControl = ctrl)
+```
 
+### Penalized logistic regression
+```{r}
+#glmnGrid <- expand.grid(.alpha = seq(0, 1, length = 6),
+#                        .lambda = exp(seq(-8, -2, length = 20)))
+#set.seed(2022)
+#model.glmn <- train(x = stroke_train[ , 1:10],
+#                    y = stroke_train$stroke,
+#                    method = "glmnet",
+#                    tuneGrid = glmnGrid,
+#                    metric = "ROC",
+#                    trControl = ctrl)
+#
+#model.glmn$bestTune
+#
+#myCol<- rainbow(25)
+#myPar <- list(superpose.symbol = list(col = myCol),
+#              superpose.line = list(col = myCol))
+#
+#plot(model.glmn, par.settings = myPar, xTrans = function(x) log(x))
+```
+
+### GAM
+```{r}
+#set.seed(2022)
+#model.gam <- train(x = stroke_train[ , 1:10],
+#                   y = stroke_train$stroke,
+#                   method = "gam",
+#                   metric = "ROC",
+#                   trControl = ctrl)
+#
+#
+#model.gam$finalModel
+#
+#plot(model.gam$finalModel, select = 3)
+```
+
+### MARS
+```{r}
+set.seed(2022)
+model.mars <- train(x = stroke_train[ , 1:10],
+                    y = stroke_train$stroke,
+                    method = "earth",
+                    tuneGrid = expand.grid(degree = 1:4, 
+                                           nprune = 2:15),
+                    metric = "ROC",
+                    trControl = ctrl)
+
+plot(model.mars)
+
+coef(model.mars$finalModel) 
+
+vip(model.mars$finalModel)
+```
+
+### LDA
+```{r}
+fit.lda <- lda(stroke ~ ., data = stroke_train)
+               
+plot(fit.lda)
+fit.lda$scaling
+head(predict(fit.lda)$x)
+lda.pred <- predict(fit.lda, newdata = stroke_test)
+head(lda.pred$posterior)
+
+summary(fit.lda)
+```
+
+
+```{r}
+#use caret
+set.seed(2022)
+model.lda <- train(x = stroke_dat[ , 1:10],
+                   y = stroke_dat$stroke,
+                   method = "lda",
+                   metric = "ROC",
+                   trControl = ctrl)
+```
 
 
