@@ -14,15 +14,8 @@ library(mlbench)
 library(pROC)
 library(klaR)
 library(vip)
+library(patchwork)
 library(AppliedPredictiveModeling)
-
-knitr::opts_chunk$set(
-  fig.width = 4,
-  fig.asp = .6,
-  out.width = "90%"
-)
-
-theme_set(theme_minimal() + theme(legend.position = "bottom"))
 ```
 
 
@@ -90,25 +83,28 @@ stroke_dat %>%
   knitr::kable()
 
 #boxplots of continuous variables
-ggplot(data = stroke_dat, aes(x = stroke, y = age), group = stroke) +
+age <- ggplot(data = stroke_dat, aes(x = stroke, y = age), group = stroke) +
   geom_boxplot() +
-  labs(title = "Boxplot of Age by Stroke Status",
-       x = "Stroke Status",
+  labs(#title = "Boxplot of Age by Stroke Status",
+       x = " ",
        y = "Age")
 
-ggplot(data = stroke_dat, aes(x = stroke, y = avg_glucose_level), group = stroke) +
+glucose <- ggplot(data = stroke_dat, aes(x = stroke, y = avg_glucose_level), group = stroke) +
   geom_boxplot() +
-  labs(title = "Boxplot of Average Glucose Level by Stroke Status",
+  labs(#title = "Boxplot of Average Glucose Level by Stroke Status",
        x = "Stroke Status",
        y = "Average Glucose Level")
 
-ggplot(data = stroke_dat, aes(x = stroke, y = bmi), group = stroke) +
+bmi <- ggplot(data = stroke_dat, aes(x = stroke, y = bmi), group = stroke) +
   geom_boxplot() +
-  labs(title = "Boxplot of BMI by Stroke Status",
-       x = "Stroke Status",
+  labs(#title = "Boxplot of BMI by Stroke Status",
+       x = " ",
        y = "BMI")
+age + glucose + bmi
+```
 
 
+```{r, dpi = 300}
 #density plots of stroke vs continuous variables
 stroke_dat_con <- stroke_dat %>% dplyr::select(age, avg_glucose_level, bmi)
 theme1 <- transparentTheme(trans = .4)
@@ -137,6 +133,7 @@ corrplot::corrplot(cor(stroke_dat[1:10]),
 fit.glm <- glm(stroke ~ .,
                data = stroke_train,
                family = binomial(link = "logit"))
+summary(fit.glm)
 
 glm.pred.prob <- predict(fit.glm,
                      newdata = stroke_test,
