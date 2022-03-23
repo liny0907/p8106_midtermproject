@@ -6,9 +6,7 @@ output: github_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
-```
 
-```{r}
 library(tidyverse)
 library(caret)
 library(glmnet)
@@ -17,7 +15,16 @@ library(pROC)
 library(klaR)
 library(vip)
 library(AppliedPredictiveModeling)
+
+knitr::opts_chunk$set(
+  fig.width = 4,
+  fig.asp = .6,
+  out.width = "90%"
+)
+
+theme_set(theme_minimal() + theme(legend.position = "bottom"))
 ```
+
 
 
 ## Data cleaning
@@ -25,40 +32,19 @@ library(AppliedPredictiveModeling)
 stroke_dat <- read.csv("healthcare-dataset-stroke-data.csv") %>% 
   janitor::clean_names() %>% 
   dplyr::select(-1) %>% #delete the id column
-  filter(bmi != "N/A") %>% #remove missing bmi values
+  filter(bmi != "N/A") %>% 
   filter(gender != "Other") %>% 
   mutate(bmi = as.numeric(bmi),
-         gender = factor(gender,
-                         levels = c("Female", "Male"),
-                         labels = c("0", "1")),
-         ever_married = factor(ever_married,
-                               levels = c("No", "Yes"),
-                               labels = c("0", "1")),
-         work_type = factor(work_type,
-                            levels = c("children", "Govt_job", "Never_worked", "Private", "Self-employed"),
-                            labels = c("0", "1", "2", "3", "4")),
-         residence_type = factor(residence_type,
-                                 levels = c("Rural", "Urban"),
-                                 labels = c("0", "1")),
-         smoking_status = factor(smoking_status,
-                                 levels = c("formerly smoked", "never smoked", "smokes", "Unknown"),
-                                 labels = c("0", "1", "2", "3")),
+         gender = as.numeric(factor(gender)) - 1,
+         ever_married = as.numeric(factor(ever_married)) - 1,
+         work_type = as.numeric(factor(work_type)) - 1,
+         residence_type = as.numeric(factor(residence_type)) - 1,
+         smoking_status = as.numeric(factor(smoking_status)) - 1,
          stroke = factor(stroke,
                          levels = c("0", "1"),
                          labels = c("neg", "pos")))
 
-#change all factor variables to numeric ones
-stroke_dat <- stroke_dat %>% 
-  mutate(gender = as.numeric(gender),
-         hypertension = as.numeric(hypertension),
-         heart_disease = as.numeric(heart_disease),
-         ever_married = as.numeric(ever_married),
-         work_type = as.numeric(work_type),
-         residence_type = as.numeric(residence_type),
-         smoking_status = as.numeric(smoking_status))
-
-
-set.seed(2022)
+set.seed(1)
 trainRows <- createDataPartition(y = stroke_dat$stroke, p = 0.8, list = FALSE)
 stroke_train <- stroke_dat[trainRows, ]
 stroke_test <- stroke_dat[-trainRows, ]
@@ -72,8 +58,58 @@ y_test <- stroke_test$stroke
 
 ## EDA
 ```{r, dpi = 300}
-summary(stroke_dat)
+#prevalence of stroke
+stroke_dat %>%
+  group_by(stroke) %>% 
+  summarize(count = n()) %>% 
+  mutate(proportion = round(count / sum(count), 3)) %>% 
+  knitr::kable()
 
+stroke_dat %>%
+  group_by(gender) %>% 
+  summarize(count = n()) %>% 
+  mutate(gender = recode(gender, `0` = "female", `1` = "male")) %>% 
+  knitr::kable()
+
+stroke_dat %>%
+  group_by(hypertension) %>% 
+  summarize(count = n()) %>%
+  mutate(hypertension = recode(hypertension, `0` = "no", `1` = "yes")) %>%
+  knitr::kable()
+
+stroke_dat %>%
+  group_by(heart_disease) %>% 
+  summarize(count = n()) %>%
+  mutate(heart_disease = recode(heart_disease, `0` = "no", `1` = "yes")) %>%
+  knitr::kable()
+
+stroke_dat %>%
+  group_by(ever_married) %>% 
+  summarize(count = n()) %>%
+  mutate(ever_married = recode(ever_married, `0` = "no", `1` = "yes")) %>%
+  knitr::kable()
+
+#boxplots of continuous variables
+ggplot(data = stroke_dat, aes(x = stroke, y = age), group = stroke) +
+  geom_boxplot() +
+  labs(title = "Boxplot of Age by Stroke Status",
+       x = "Stroke Status",
+       y = "Age")
+
+ggplot(data = stroke_dat, aes(x = stroke, y = avg_glucose_level), group = stroke) +
+  geom_boxplot() +
+  labs(title = "Boxplot of Average Glucose Level by Stroke Status",
+       x = "Stroke Status",
+       y = "Average Glucose Level")
+
+ggplot(data = stroke_dat, aes(x = stroke, y = bmi), group = stroke) +
+  geom_boxplot() +
+  labs(title = "Boxplot of BMI by Stroke Status",
+       x = "Stroke Status",
+       y = "BMI")
+
+
+#density plots of stroke vs continuous variables
 stroke_dat_con <- stroke_dat %>% dplyr::select(age, avg_glucose_level, bmi)
 theme1 <- transparentTheme(trans = .4)
 trellis.par.set(theme1)
@@ -85,18 +121,13 @@ featurePlot(x = stroke_dat_con,
             plot = "density", pch = "|", 
             auto.key = list(columns = 2))
 
-#LDA based on every combination of two variables
-partimat(stroke ~ age + avg_glucose_level + bmi, 
-         data = stroke_dat, method = "lda")
-
 #correlation plot of predictors
-corrplot::corrplot(cor(x_train), 
+corrplot::corrplot(cor(stroke_dat[1:10]), 
          method = "circle", 
          type = "full",
          tl.cex = 0.5)
 ```
 
-From the correlation plot, we can see that there are no highly correlated predictors in general. `ever_marriedYes` is positively correlated with `age`, which is reasonable. 
 
 ## Fitting models
 
@@ -107,18 +138,18 @@ fit.glm <- glm(stroke ~ .,
                data = stroke_train,
                family = binomial(link = "logit"))
 
-test.pred.prob <- predict(fit.glm,
+glm.pred.prob <- predict(fit.glm,
                      newdata = stroke_test,
                      type = "response")
-test.pred <- rep("neg", length(test.pred.prob))
-test.pred[test.pred.prob > 0.5] <- "pos"
+glm.pred <- rep("neg", length(glm.pred.prob))
+glm.pred[glm.pred.prob > 0.5] <- "pos"
 
-confusionMatrix(data = as.factor(test.pred),
+confusionMatrix(data = factor(glm.pred),
                 reference = stroke_test$stroke,
                 positive = "pos")
 
 #ROC curve
-roc.glm <- roc(stroke_test$stroke, test.pred.prob)
+roc.glm <- roc(stroke_test$stroke, glm.pred.prob)
 plot(roc.glm, legacy.axes = TRUE, print.auc = TRUE)
 plot(smooth(roc.glm), col = 4, add = TRUE)
 ```
@@ -128,7 +159,7 @@ plot(smooth(roc.glm), col = 4, add = TRUE)
 ctrl <- trainControl(method = "repeatedcv", repeats = 5,
                      summaryFunction = twoClassSummary,
                      classProbs = TRUE)
-set.seed(2022)
+set.seed(1)
 model.glm <- train(x = stroke_train[ , 1:10],
                    y = stroke_train$stroke,
                    method = "glm",
@@ -137,48 +168,90 @@ model.glm <- train(x = stroke_train[ , 1:10],
 ```
 
 ### Penalized logistic regression
+```{r, dpi = 300}
+glmnGrid <- expand.grid(.alpha = seq(0, 1, length = 21),
+                        .lambda = exp(seq(-6, -1, length = 30)))
+set.seed(1)
+model.glmn <- train(x = stroke_train[ , 1:10],
+                    y = stroke_train$stroke,
+                    method = "glmnet",
+                    tuneGrid = glmnGrid,
+                    metric = "ROC",
+                    trControl = ctrl)
+
+model.glmn$bestTune
+
+myCol <- rainbow(25)
+myPar <- list(superpose.symbol = list(col = myCol),
+              superpose.line = list(col = myCol))
+plot(model.glmn, par.settings = myPar, xTrans = function(x) log(x))
+
+glmn.pred.prob <- predict(model.glmn,
+                     newdata = stroke_test,
+                     type = "prob")
+glmn.pred <- ifelse(glmn.pred.prob$pos > 0.5, "pos", "neg")
+confusionMatrix(data = as.factor(glmn.pred),
+                reference = stroke_test$stroke,
+                positive = "pos")
+#ROC curve
+roc.glmn <- roc(stroke_test$stroke, glmn.pred.prob[ , 2])
+plot(roc.glmn, legacy.axes = TRUE, print.auc = TRUE)
+plot(smooth(roc.glmn), col = 4, add = TRUE)
+```
+
+### LDA
+```{r, dpi = 300}
+par(mar = c(1,1,1,1))
+fit.lda <- lda(stroke ~ ., data = stroke_train)
+plot(fit.lda)
+
+lda.pred.prob <- predict(fit.lda, newdata = stroke_test, type = "prob")
+posterior <- as.data.frame(lda.pred.prob$posterior)
+lda.pred <- ifelse(posterior$pos > 0.5, "pos", "neg")
+
+confusionMatrix(data = as.factor(lda.pred),
+                reference = stroke_test$stroke,
+                positive = "pos")
+#ROC curve
+roc.lda <- roc(stroke_test$stroke, posterior[, 2])
+
+plot(roc.lda, legacy.axes = TRUE, print.auc = TRUE)
+plot(smooth(roc.lda), col = 4, add = TRUE)
+```
+
+
 ```{r}
-#glmnGrid <- expand.grid(.alpha = seq(0, 1, length = 6),
-#                        .lambda = exp(seq(-8, -2, length = 20)))
-#set.seed(2022)
-#model.glmn <- train(x = stroke_train[ , 1:10],
-#                    y = stroke_train$stroke,
-#                    method = "glmnet",
-#                    tuneGrid = glmnGrid,
-#                    metric = "ROC",
-#                    trControl = ctrl)
-#
-#model.glmn$bestTune
-#
-#myCol<- rainbow(25)
-#myPar <- list(superpose.symbol = list(col = myCol),
-#              superpose.line = list(col = myCol))
-#
-#plot(model.glmn, par.settings = myPar, xTrans = function(x) log(x))
+#use caret
+set.seed(1)
+model.lda <- train(x = stroke_dat[ , 1:10],
+                   y = stroke_dat$stroke,
+                   method = "lda",
+                   metric = "ROC",
+                   trControl = ctrl)
 ```
 
 ### GAM
-```{r}
-#set.seed(2022)
-#model.gam <- train(x = stroke_train[ , 1:10],
-#                   y = stroke_train$stroke,
-#                   method = "gam",
-#                   metric = "ROC",
-#                   trControl = ctrl)
-#
-#
-#model.gam$finalModel
-#
-#plot(model.gam$finalModel, select = 3)
+```{r, dpi = 300}
+set.seed(1)
+model.gam <- train(x = stroke_train[ , 1:10],
+                   y = stroke_train$stroke,
+                   method = "gam",
+                   metric = "ROC",
+                   trControl = ctrl)
+
+
+model.gam$finalModel
+
+plot(model.gam$finalModel, select = 3)
 ```
 
 ### MARS
-```{r}
-set.seed(2022)
+```{r, dpi = 300}
+set.seed(1)
 model.mars <- train(x = stroke_train[ , 1:10],
                     y = stroke_train$stroke,
                     method = "earth",
-                    tuneGrid = expand.grid(degree = 1:4, 
+                    tuneGrid = expand.grid(degree = 1:3, 
                                            nprune = 2:15),
                     metric = "ROC",
                     trControl = ctrl)
@@ -190,28 +263,32 @@ coef(model.mars$finalModel)
 vip(model.mars$finalModel)
 ```
 
-### LDA
-```{r}
-fit.lda <- lda(stroke ~ ., data = stroke_train)
-               
-plot(fit.lda)
-fit.lda$scaling
-head(predict(fit.lda)$x)
-lda.pred <- predict(fit.lda, newdata = stroke_test)
-head(lda.pred$posterior)
+## Model Comparison
+```{r, dpi = 300}
+res <- resamples(list(glm = model.glm, glmn = model.glmn, lda = model.lda, gam = model.gam, mars = model.mars))
+roc_summary <- summary(res)$statistics[1]
+roc_summary %>% knitr::kable()
 
-summary(fit.lda)
+bwplot(res, metric = "ROC")
 ```
 
+```{r, dpi = 300}
+vip(model.glmn)
+glmn.pred.prob1 <- predict(model.glmn, newdata = stroke_test, type = "prob")
+roc.glmn1 <- roc(stroke_test$stroke, glmn.pred.prob1[, 2])
+auc1 <- roc.glmn$auc[1]
+auc1
+plot(roc.glmn1, legacy.axes = TRUE)
+legend("bottomright", legend = paste0("glmn AUC", ": ", round(auc1, 3)), cex = 1)
+```
 
 ```{r}
-#use caret
-set.seed(2022)
-model.lda <- train(x = stroke_dat[ , 1:10],
-                   y = stroke_dat$stroke,
-                   method = "lda",
-                   metric = "ROC",
-                   trControl = ctrl)
+glmn.pred1 <- rep("neg", nrow(glmn.pred.prob1))
+glmn.pred1[glmn.pred.prob[, 2] > 0.5] <- "pos"
+
+confusionMatrix(data = factor(glmn.pred1),
+                reference = stroke_test$stroke,
+                positive = "pos")
 ```
 
 
