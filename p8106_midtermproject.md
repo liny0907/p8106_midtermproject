@@ -8,7 +8,7 @@ Lin Yang
 stroke_dat <- read.csv("healthcare-dataset-stroke-data.csv") %>% 
   janitor::clean_names() %>% 
   dplyr::select(-1) %>% #delete the id column
-  filter(bmi != "N/A") %>% 
+  filter(bmi != "N/A") %>% #remove missing bmi values
   filter(gender != "Other") %>% 
   mutate(bmi = as.numeric(bmi),
          gender = as.numeric(factor(gender)) - 1,
@@ -49,6 +49,7 @@ stroke_dat %>%
 | pos    |   209 |      0.043 |
 
 ``` r
+#distribution of gender
 stroke_dat %>%
   group_by(gender) %>% 
   summarize(count = n()) %>% 
@@ -62,6 +63,7 @@ stroke_dat %>%
 | male   |  2011 |
 
 ``` r
+#prevalence of hypertension
 stroke_dat %>%
   group_by(hypertension) %>% 
   summarize(count = n()) %>%
@@ -75,6 +77,7 @@ stroke_dat %>%
 | yes          |   451 |
 
 ``` r
+#prevalence of heart disease
 stroke_dat %>%
   group_by(heart_disease) %>% 
   summarize(count = n()) %>%
@@ -102,34 +105,25 @@ stroke_dat %>%
 
 ``` r
 #boxplots of continuous variables
-ggplot(data = stroke_dat, aes(x = stroke, y = age), group = stroke) +
+age <- ggplot(data = stroke_dat, aes(x = stroke, y = age), group = stroke) +
   geom_boxplot() +
-  labs(title = "Boxplot of Age by Stroke Status",
-       x = "Stroke Status",
+  labs(x = " ",
        y = "Age")
-```
 
-<img src="p8106_midtermproject_files/figure-gfm/unnamed-chunk-2-1.png" width="90%" />
-
-``` r
-ggplot(data = stroke_dat, aes(x = stroke, y = avg_glucose_level), group = stroke) +
+glucose <- ggplot(data = stroke_dat, aes(x = stroke, y = avg_glucose_level), group = stroke) +
   geom_boxplot() +
-  labs(title = "Boxplot of Average Glucose Level by Stroke Status",
-       x = "Stroke Status",
+  labs(x = "Stroke Status",
        y = "Average Glucose Level")
-```
 
-<img src="p8106_midtermproject_files/figure-gfm/unnamed-chunk-2-2.png" width="90%" />
-
-``` r
-ggplot(data = stroke_dat, aes(x = stroke, y = bmi), group = stroke) +
+bmi <- ggplot(data = stroke_dat, aes(x = stroke, y = bmi), group = stroke) +
   geom_boxplot() +
-  labs(title = "Boxplot of BMI by Stroke Status",
-       x = "Stroke Status",
+  labs(x = " ",
        y = "BMI")
+
+age + glucose + bmi
 ```
 
-<img src="p8106_midtermproject_files/figure-gfm/unnamed-chunk-2-3.png" width="90%" />
+![](p8106_midtermproject_files/figure-gfm/unnamed-chunk-2-1.png)<!-- -->
 
 ``` r
 #density plots of stroke vs continuous variables
@@ -145,7 +139,7 @@ featurePlot(x = stroke_dat_con,
             auto.key = list(columns = 2))
 ```
 
-<img src="p8106_midtermproject_files/figure-gfm/unnamed-chunk-2-4.png" width="90%" />
+![](p8106_midtermproject_files/figure-gfm/unnamed-chunk-3-1.png)<!-- -->
 
 ``` r
 #correlation plot of predictors
@@ -155,7 +149,7 @@ corrplot::corrplot(cor(stroke_dat[1:10]),
          tl.cex = 0.5)
 ```
 
-<img src="p8106_midtermproject_files/figure-gfm/unnamed-chunk-2-5.png" width="90%" />
+![](p8106_midtermproject_files/figure-gfm/unnamed-chunk-3-2.png)<!-- -->
 
 ## Fitting models
 
@@ -166,7 +160,43 @@ corrplot::corrplot(cor(stroke_dat[1:10]),
 fit.glm <- glm(stroke ~ .,
                data = stroke_train,
                family = binomial(link = "logit"))
+summary(fit.glm)
+```
 
+    ## 
+    ## Call:
+    ## glm(formula = stroke ~ ., family = binomial(link = "logit"), 
+    ##     data = stroke_train)
+    ## 
+    ## Deviance Residuals: 
+    ##     Min       1Q   Median       3Q      Max  
+    ## -1.1476  -0.2948  -0.1546  -0.0739   3.5252  
+    ## 
+    ## Coefficients:
+    ##                    Estimate Std. Error z value Pr(>|z|)    
+    ## (Intercept)       -7.639251   0.676093 -11.299  < 2e-16 ***
+    ## gender             0.012272   0.170549   0.072  0.94264    
+    ## age                0.073277   0.006693  10.949  < 2e-16 ***
+    ## hypertension       0.482939   0.196059   2.463  0.01377 *  
+    ## heart_disease      0.317726   0.231726   1.371  0.17033    
+    ## ever_married      -0.155512   0.268260  -0.580  0.56211    
+    ## work_type         -0.095933   0.086350  -1.111  0.26658    
+    ## residence_type    -0.089320   0.166800  -0.535  0.59231    
+    ## avg_glucose_level  0.004323   0.001445   2.992  0.00277 ** 
+    ## bmi                0.005275   0.013167   0.401  0.68868    
+    ## smoking_status    -0.003868   0.081829  -0.047  0.96230    
+    ## ---
+    ## Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+    ## 
+    ## (Dispersion parameter for binomial family taken to be 1)
+    ## 
+    ##     Null deviance: 1387.8  on 3927  degrees of freedom
+    ## Residual deviance: 1098.4  on 3917  degrees of freedom
+    ## AIC: 1120.4
+    ## 
+    ## Number of Fisher Scoring iterations: 8
+
+``` r
 glm.pred.prob <- predict(fit.glm,
                      newdata = stroke_test,
                      type = "response")
@@ -213,7 +243,7 @@ plot(roc.glm, legacy.axes = TRUE, print.auc = TRUE)
 plot(smooth(roc.glm), col = 4, add = TRUE)
 ```
 
-<img src="p8106_midtermproject_files/figure-gfm/unnamed-chunk-3-1.png" width="90%" />
+![](p8106_midtermproject_files/figure-gfm/unnamed-chunk-4-1.png)<!-- -->
 
 ``` r
 #fit a logistic regression model using caret for CV
@@ -254,7 +284,7 @@ myPar <- list(superpose.symbol = list(col = myCol),
 plot(model.glmn, par.settings = myPar, xTrans = function(x) log(x))
 ```
 
-<img src="p8106_midtermproject_files/figure-gfm/unnamed-chunk-5-1.png" width="90%" />
+![](p8106_midtermproject_files/figure-gfm/unnamed-chunk-6-1.png)<!-- -->
 
 ``` r
 glmn.pred.prob <- predict(model.glmn,
@@ -301,7 +331,7 @@ plot(roc.glmn, legacy.axes = TRUE, print.auc = TRUE)
 plot(smooth(roc.glmn), col = 4, add = TRUE)
 ```
 
-<img src="p8106_midtermproject_files/figure-gfm/unnamed-chunk-5-2.png" width="90%" />
+![](p8106_midtermproject_files/figure-gfm/unnamed-chunk-6-2.png)<!-- -->
 
 ### LDA
 
@@ -311,7 +341,7 @@ fit.lda <- lda(stroke ~ ., data = stroke_train)
 plot(fit.lda)
 ```
 
-<img src="p8106_midtermproject_files/figure-gfm/unnamed-chunk-6-1.png" width="90%" />
+![](p8106_midtermproject_files/figure-gfm/unnamed-chunk-7-1.png)<!-- -->
 
 ``` r
 lda.pred.prob <- predict(fit.lda, newdata = stroke_test, type = "prob")
@@ -359,7 +389,7 @@ plot(roc.lda, legacy.axes = TRUE, print.auc = TRUE)
 plot(smooth(roc.lda), col = 4, add = TRUE)
 ```
 
-<img src="p8106_midtermproject_files/figure-gfm/unnamed-chunk-6-2.png" width="90%" />
+![](p8106_midtermproject_files/figure-gfm/unnamed-chunk-7-2.png)<!-- -->
 
 ``` r
 #use caret
@@ -402,7 +432,7 @@ model.gam$finalModel
 plot(model.gam$finalModel, select = 3)
 ```
 
-<img src="p8106_midtermproject_files/figure-gfm/unnamed-chunk-8-1.png" width="90%" />
+![](p8106_midtermproject_files/figure-gfm/unnamed-chunk-9-1.png)<!-- -->
 
 ### MARS
 
@@ -419,7 +449,7 @@ model.mars <- train(x = stroke_train[ , 1:10],
 plot(model.mars)
 ```
 
-<img src="p8106_midtermproject_files/figure-gfm/unnamed-chunk-9-1.png" width="90%" />
+![](p8106_midtermproject_files/figure-gfm/unnamed-chunk-10-1.png)<!-- -->
 
 ``` r
 coef(model.mars$finalModel) 
@@ -433,12 +463,6 @@ coef(model.mars$finalModel)
     ##               -0.718808479               -0.334687398 
     ##                  h(age-75)                  h(age-36) 
     ##               -0.006336640                0.083775053
-
-``` r
-vip(model.mars$finalModel)
-```
-
-<img src="p8106_midtermproject_files/figure-gfm/unnamed-chunk-9-2.png" width="90%" />
 
 ## Model Comparison
 
@@ -470,13 +494,17 @@ roc_summary %>% knitr::kable()
 bwplot(res, metric = "ROC")
 ```
 
-<img src="p8106_midtermproject_files/figure-gfm/unnamed-chunk-10-1.png" width="90%" />
+![](p8106_midtermproject_files/figure-gfm/unnamed-chunk-11-1.png)<!-- -->
+
+The penalized logistic regression model is selected to be the best model
+for predicting stroke because it has the highest AUC. It’s ROC curve and
+confusion matrix using the test data are shown below
 
 ``` r
 vip(model.glmn)
 ```
 
-<img src="p8106_midtermproject_files/figure-gfm/unnamed-chunk-11-1.png" width="90%" />
+![](p8106_midtermproject_files/figure-gfm/unnamed-chunk-12-1.png)<!-- -->
 
 ``` r
 glmn.pred.prob1 <- predict(model.glmn, newdata = stroke_test, type = "prob")
@@ -489,10 +517,11 @@ auc1
 
 ``` r
 plot(roc.glmn1, legacy.axes = TRUE)
+plot(smooth(roc.glmn1), col = 4, add = TRUE)
 legend("bottomright", legend = paste0("glmn AUC", ": ", round(auc1, 3)), cex = 1)
 ```
 
-<img src="p8106_midtermproject_files/figure-gfm/unnamed-chunk-11-2.png" width="90%" />
+![](p8106_midtermproject_files/figure-gfm/unnamed-chunk-12-2.png)<!-- -->
 
 ``` r
 glmn.pred1 <- rep("neg", nrow(glmn.pred.prob1))

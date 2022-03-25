@@ -25,7 +25,7 @@ library(AppliedPredictiveModeling)
 stroke_dat <- read.csv("healthcare-dataset-stroke-data.csv") %>% 
   janitor::clean_names() %>% 
   dplyr::select(-1) %>% #delete the id column
-  filter(bmi != "N/A") %>% 
+  filter(bmi != "N/A") %>% #remove missing bmi values
   filter(gender != "Other") %>% 
   mutate(bmi = as.numeric(bmi),
          gender = as.numeric(factor(gender)) - 1,
@@ -57,19 +57,19 @@ stroke_dat %>%
   summarize(count = n()) %>% 
   mutate(proportion = round(count / sum(count), 3)) %>% 
   knitr::kable()
-
+#distribution of gender
 stroke_dat %>%
   group_by(gender) %>% 
   summarize(count = n()) %>% 
   mutate(gender = recode(gender, `0` = "female", `1` = "male")) %>% 
   knitr::kable()
-
+#prevalence of hypertension
 stroke_dat %>%
   group_by(hypertension) %>% 
   summarize(count = n()) %>%
   mutate(hypertension = recode(hypertension, `0` = "no", `1` = "yes")) %>%
   knitr::kable()
-
+#prevalence of heart disease
 stroke_dat %>%
   group_by(heart_disease) %>% 
   summarize(count = n()) %>%
@@ -85,21 +85,19 @@ stroke_dat %>%
 #boxplots of continuous variables
 age <- ggplot(data = stroke_dat, aes(x = stroke, y = age), group = stroke) +
   geom_boxplot() +
-  labs(#title = "Boxplot of Age by Stroke Status",
-       x = " ",
+  labs(x = " ",
        y = "Age")
 
 glucose <- ggplot(data = stroke_dat, aes(x = stroke, y = avg_glucose_level), group = stroke) +
   geom_boxplot() +
-  labs(#title = "Boxplot of Average Glucose Level by Stroke Status",
-       x = "Stroke Status",
+  labs(x = "Stroke Status",
        y = "Average Glucose Level")
 
 bmi <- ggplot(data = stroke_dat, aes(x = stroke, y = bmi), group = stroke) +
   geom_boxplot() +
-  labs(#title = "Boxplot of BMI by Stroke Status",
-       x = " ",
+  labs(x = " ",
        y = "BMI")
+
 age + glucose + bmi
 ```
 
@@ -216,7 +214,6 @@ plot(roc.lda, legacy.axes = TRUE, print.auc = TRUE)
 plot(smooth(roc.lda), col = 4, add = TRUE)
 ```
 
-
 ```{r}
 #use caret
 set.seed(1)
@@ -256,8 +253,6 @@ model.mars <- train(x = stroke_train[ , 1:10],
 plot(model.mars)
 
 coef(model.mars$finalModel) 
-
-vip(model.mars$finalModel)
 ```
 
 ## Model Comparison
@@ -269,13 +264,17 @@ roc_summary %>% knitr::kable()
 bwplot(res, metric = "ROC")
 ```
 
+The penalized logistic regression model is selected to be the best model for predicting stroke because it has the highest AUC. It's ROC curve and confusion matrix using the test data are shown below
+
 ```{r, dpi = 300}
 vip(model.glmn)
+
 glmn.pred.prob1 <- predict(model.glmn, newdata = stroke_test, type = "prob")
 roc.glmn1 <- roc(stroke_test$stroke, glmn.pred.prob1[, 2])
 auc1 <- roc.glmn$auc[1]
 auc1
 plot(roc.glmn1, legacy.axes = TRUE)
+plot(smooth(roc.glmn1), col = 4, add = TRUE)
 legend("bottomright", legend = paste0("glmn AUC", ": ", round(auc1, 3)), cex = 1)
 ```
 
